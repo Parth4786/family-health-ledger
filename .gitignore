@@ -7,3 +7,4 @@ temp-fhl
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+test-upload.pdf
