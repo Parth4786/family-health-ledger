@@ -477,12 +477,15 @@ export function useLedger() {
 
     if (file && session?.user) {
       const safeName = `${Date.now()}-${file.name.replace(/\s+/g, "-").toLowerCase()}`;
-      filePath = `${snapshot.household.id}/${input.patient_id}/${safeName}`;
+      filePath = input.patient_id
+        ? `${snapshot.household.id}/${input.patient_id}/${safeName}`
+        : `${snapshot.household.id}/${safeName}`;
+      console.debug("Report upload path:", filePath);
       const { error: uploadError } = await supabase.storage.from("reports").upload(filePath, file, {
         upsert: true,
       });
       if (uploadError) {
-        fail(`Report upload failed: ${uploadError.message}`);
+        fail(`Report upload failed (${filePath}): ${uploadError.message}`);
       }
     }
 
