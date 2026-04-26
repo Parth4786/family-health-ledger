@@ -18,6 +18,52 @@ function stamp(payload: Record<string, unknown>) {
   };
 }
 
+function normalizeMedicine(medicine: Partial<Medicine>): Medicine {
+  return {
+    id: medicine.id ?? crypto.randomUUID(),
+    household_id: medicine.household_id ?? "",
+    patient_id: medicine.patient_id ?? "",
+    name: medicine.name ?? "",
+    purpose: medicine.purpose ?? "",
+    dosage_per_day: medicine.dosage_per_day ?? 0,
+    schedule: Array.isArray(medicine.schedule) ? medicine.schedule : [],
+    timing_slots: medicine.timing_slots ?? {},
+    specific_days: Array.isArray(medicine.specific_days) ? medicine.specific_days : [],
+    specific_times: Array.isArray(medicine.specific_times) ? medicine.specific_times : [],
+    duration_days: medicine.duration_days ?? null,
+    dosage_notes: medicine.dosage_notes ?? "",
+    tablets_per_strip: medicine.tablets_per_strip ?? 0,
+    initial_strips_bought: medicine.initial_strips_bought ?? 0,
+    initial_total_cost: medicine.initial_total_cost ?? 0,
+    start_date: medicine.start_date ?? todayIso(),
+    stop_date: medicine.stop_date ?? null,
+    notes: medicine.notes ?? "",
+    is_active: medicine.is_active ?? false,
+    is_archived: medicine.is_archived ?? false,
+    created_at: medicine.created_at ?? new Date().toISOString(),
+    updated_at: medicine.updated_at ?? new Date().toISOString(),
+  };
+}
+
+function normalizeSnapshot(snapshot: Partial<Snapshot> | undefined): Snapshot {
+  return {
+    household: snapshot?.household ?? null,
+    patients: Array.isArray(snapshot?.patients) ? snapshot!.patients : [],
+    medicines: Array.isArray(snapshot?.medicines)
+      ? snapshot!.medicines.map((medicine) => normalizeMedicine(medicine))
+      : [],
+    purchases: Array.isArray(snapshot?.purchases) ? snapshot!.purchases : [],
+    reports: Array.isArray(snapshot?.reports)
+      ? snapshot!.reports.map((report) => ({
+          ...report,
+          file_url: report.file_url ?? "",
+          file_path: report.file_path ?? "",
+        }))
+      : [],
+    dailyLogs: Array.isArray(snapshot?.dailyLogs) ? snapshot!.dailyLogs : [],
+  };
+}
+
 async function fetchHousehold(ownerId: string) {
   const { data, error } = await supabase.from("households").select("*").eq("owner_id", ownerId).maybeSingle();
   if (error) {
@@ -117,7 +163,7 @@ export function useLedger() {
       if (!mounted || !cached) {
         return;
       }
-      setSnapshot(cached);
+      setSnapshot(normalizeSnapshot(cached));
     });
 
     supabase.auth.getSession().then(({ data }) => {
@@ -176,8 +222,9 @@ export function useLedger() {
         const remoteSnapshot = await fetchSnapshot(household.id);
 
         if (!cancelled) {
-          setSnapshot(remoteSnapshot);
-          await saveSnapshot(remoteSnapshot);
+          const normalized = normalizeSnapshot(remoteSnapshot);
+          setSnapshot(normalized);
+          await saveSnapshot(normalized);
           setIsConfigured(true);
           setSyncStatus("ready");
         }
@@ -209,8 +256,9 @@ export function useLedger() {
   }
 
   async function persistSnapshot(nextSnapshot: Snapshot) {
-    setSnapshot(nextSnapshot);
-    await saveSnapshot(nextSnapshot);
+    const normalized = normalizeSnapshot(nextSnapshot);
+    setSnapshot(normalized);
+    await saveSnapshot(normalized);
   }
 
   async function upsertRecord(table: TableName, record: Record<string, unknown>) {
