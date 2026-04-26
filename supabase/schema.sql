@@ -181,7 +181,7 @@ with check (
     select 1
     from public.households h
     where h.owner_id = auth.uid()
-      and split_part(name, '/', 1) = h.id::text
+      and (storage.foldername(name))[1] = h.id::text
   )
 );
 
@@ -194,6 +194,6 @@ using (
     select 1
     from public.households h
     where h.owner_id = auth.uid()
-      and split_part(name, '/', 1) = h.id::text
+      and (storage.foldername(name))[1] = h.id::text
   )
 );
