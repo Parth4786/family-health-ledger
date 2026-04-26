@@ -26,6 +26,10 @@ function normalizeId(value: unknown): string {
   return isValidUuid(value) ? value : crypto.randomUUID();
 }
 
+function normalizeStoragePath(path: string): string {
+  return path.replace(/^\/+/, "");
+}
+
 function normalizeMedicine(medicine: Partial<Medicine>, householdId: string): Medicine {
   return {
     id: normalizeId(medicine.id),
@@ -480,12 +484,14 @@ export function useLedger() {
       filePath = input.patient_id
         ? `${snapshot.household.id}/${input.patient_id}/${safeName}`
         : `${snapshot.household.id}/${safeName}`;
-      console.debug("Report upload user:", session?.user?.id);
-      console.debug("Report upload path:", filePath);
+      filePath = normalizeStoragePath(filePath);
+      console.log("Report upload user:", session?.user?.id);
+      console.log("Report upload path:", filePath);
       const { error: uploadError } = await supabase.storage.from("reports").upload(filePath, file, {
         upsert: true,
       });
       if (uploadError) {
+        console.error("Report upload error path:", filePath, "message:", uploadError.message);
         fail(`Report upload failed (${filePath}): ${uploadError.message}`);
       }
     }
