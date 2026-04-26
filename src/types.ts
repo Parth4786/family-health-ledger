@@ -2,6 +2,18 @@ export type SyncStatus = "idle" | "loading" | "syncing" | "offline" | "error" | 
 
 export type TabKey = "dashboard" | "patients" | "medicines" | "purchases" | "reports" | "setup";
 
+export type IntakeSlot =
+  | "before_breakfast"
+  | "after_breakfast"
+  | "before_lunch"
+  | "after_lunch"
+  | "before_dinner"
+  | "after_dinner";
+
+export type TimelineKind = "medicine-started" | "medicine-stopped" | "purchase" | "report" | "daily-log";
+
+export type MedicineTiming = Partial<Record<IntakeSlot, string>>;
+
 export interface Household {
   id: string;
   owner_id: string;
@@ -33,6 +45,11 @@ export interface Medicine {
   purpose: string;
   dosage_per_day: number;
   schedule: string[];
+  timing_slots: MedicineTiming;
+  specific_days: string[];
+  specific_times: string[];
+  duration_days: number | null;
+  dosage_notes: string;
   tablets_per_strip: number;
   initial_strips_bought: number;
   initial_total_cost: number;
@@ -77,12 +94,30 @@ export interface Report {
   updated_at: string;
 }
 
+export interface DailyLog {
+  id: string;
+  household_id: string;
+  patient_id: string;
+  logged_on: string;
+  bp_systolic: number | null;
+  bp_diastolic: number | null;
+  pulse: number | null;
+  sugar: number | null;
+  temperature: number | null;
+  weight: number | null;
+  notes: string;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Snapshot {
   household: Household | null;
   patients: Patient[];
   medicines: Medicine[];
   purchases: Purchase[];
   reports: Report[];
+  dailyLogs: DailyLog[];
 }
 
 export interface ReminderItem {
@@ -100,6 +135,7 @@ export interface PatientSummary {
   criticalCount: number;
   monthlyCost: number;
   reportCount: number;
+  latestLog: DailyLog | undefined;
 }
 
 export interface AppStats {
@@ -120,4 +156,15 @@ export interface DerivedMedicine {
   dailyCost: number;
   remainingValue: number;
   totalCost: number;
+  activeDaysTaken: number;
+  isCourseComplete: boolean;
+}
+
+export interface TimelineEntry {
+  id: string;
+  kind: TimelineKind;
+  patientId: string;
+  title: string;
+  subtitle: string;
+  date: string;
 }

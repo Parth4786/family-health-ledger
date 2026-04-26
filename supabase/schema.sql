@@ -31,6 +31,11 @@ create table if not exists public.medicines (
   purpose text not null default '',
   dosage_per_day numeric(10,2) not null check (dosage_per_day > 0),
   schedule text[] not null default '{}',
+  timing_slots jsonb not null default '{}'::jsonb,
+  specific_days text[] not null default '{}',
+  specific_times text[] not null default '{}',
+  duration_days integer,
+  dosage_notes text not null default '',
   tablets_per_strip integer not null check (tablets_per_strip > 0),
   initial_strips_bought numeric(10,2) not null default 1 check (initial_strips_bought > 0),
   initial_total_cost numeric(10,2) not null default 0 check (initial_total_cost >= 0),
@@ -75,6 +80,29 @@ create table if not exists public.reports (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.daily_logs (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  patient_id uuid not null references public.patients(id) on delete cascade,
+  logged_on date not null,
+  bp_systolic integer,
+  bp_diastolic integer,
+  pulse integer,
+  sugar numeric(10,2),
+  temperature numeric(10,2),
+  weight numeric(10,2),
+  notes text not null default '',
+  is_archived boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.medicines add column if not exists timing_slots jsonb not null default '{}'::jsonb;
+alter table public.medicines add column if not exists specific_days text[] not null default '{}';
+alter table public.medicines add column if not exists specific_times text[] not null default '{}';
+alter table public.medicines add column if not exists duration_days integer;
+alter table public.medicines add column if not exists dosage_notes text not null default '';
+
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
@@ -95,12 +123,15 @@ drop trigger if exists purchases_touch_updated_at on public.purchases;
 create trigger purchases_touch_updated_at before update on public.purchases for each row execute function public.touch_updated_at();
 drop trigger if exists reports_touch_updated_at on public.reports;
 create trigger reports_touch_updated_at before update on public.reports for each row execute function public.touch_updated_at();
+drop trigger if exists daily_logs_touch_updated_at on public.daily_logs;
+create trigger daily_logs_touch_updated_at before update on public.daily_logs for each row execute function public.touch_updated_at();
 
 alter table public.households enable row level security;
 alter table public.patients enable row level security;
 alter table public.medicines enable row level security;
 alter table public.purchases enable row level security;
 alter table public.reports enable row level security;
+alter table public.daily_logs enable row level security;
 
 drop policy if exists "household owner can view own household" on public.households;
 create policy "household owner can view own household" on public.households
@@ -129,6 +160,11 @@ with check (exists (select 1 from public.households h where h.id = household_id 
 
 drop policy if exists "reports scoped to own household" on public.reports;
 create policy "reports scoped to own household" on public.reports
+for all using (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()))
+with check (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()));
+
+drop policy if exists "daily logs scoped to own household" on public.daily_logs;
+create policy "daily logs scoped to own household" on public.daily_logs
 for all using (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()))
 with check (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()));
 

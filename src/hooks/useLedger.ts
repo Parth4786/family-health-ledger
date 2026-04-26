@@ -5,9 +5,9 @@ import { demoSnapshot } from "../lib/demo";
 import { buildAppStats, buildDerivedMedicines, buildPatientSummaries, buildReminders } from "../lib/ledger";
 import { supabase } from "../lib/supabase";
 import { todayIso } from "../lib/date";
-import type { Household, Medicine, Patient, Purchase, Report, Snapshot, SyncStatus } from "../types";
+import type { DailyLog, Household, Medicine, Patient, Purchase, Report, Snapshot, SyncStatus } from "../types";
 
-type TableName = "households" | "patients" | "medicines" | "purchases" | "reports";
+type TableName = "households" | "patients" | "medicines" | "purchases" | "reports" | "daily_logs";
 
 function stamp(payload: Record<string, unknown>) {
   const now = new Date().toISOString();
@@ -45,45 +45,25 @@ async function ensureHousehold(ownerId: string, fallbackName: string) {
   return data as Household;
 }
 
-async function fetchReportsWithUrls(householdId: string) {
-  const { data, error } = await supabase
-    .from("reports")
-    .select("*")
-    .eq("household_id", householdId)
-    .order("report_date", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  const reports = (data ?? []) as Report[];
-  const resolved = await Promise.all(
-    reports.map(async (report) => {
-      if (!report.file_path) {
-        return report;
-      }
-
-      const { data: signed } = await supabase.storage.from("reports").createSignedUrl(report.file_path, 60 * 60 * 24 * 30);
-      return {
-        ...report,
-        file_url: signed?.signedUrl ?? report.file_url,
-      };
-    }),
-  );
-
-  return resolved;
-}
-
 async function fetchSnapshot(householdId: string) {
-  const [patientsResult, medicinesResult, purchasesResult, reports, householdResult] = await Promise.all([
+  const [patientsResult, medicinesResult, purchasesResult, reportsResult, logsResult, householdResult] = await Promise.all([
     supabase.from("patients").select("*").eq("household_id", householdId).order("updated_at", { ascending: false }),
     supabase.from("medicines").select("*").eq("household_id", householdId).order("updated_at", { ascending: false }),
     supabase.from("purchases").select("*").eq("household_id", householdId).order("purchased_on", { ascending: false }),
-    fetchReportsWithUrls(householdId),
+    supabase.from("reports").select("*").eq("household_id", householdId).order("report_date", { ascending: false }),
+    supabase.from("daily_logs").select("*").eq("household_id", householdId).order("logged_on", { ascending: false }),
     supabase.from("households").select("*").eq("id", householdId).single(),
   ]);
 
-  const failures = [patientsResult.error, medicinesResult.error, purchasesResult.error, householdResult.error].filter(Boolean);
+  const failures = [
+    patientsResult.error,
+    medicinesResult.error,
+    purchasesResult.error,
+    reportsResult.error,
+    logsResult.error,
+    householdResult.error,
+  ].filter(Boolean);
+
   if (failures.length > 0) {
     throw failures[0];
   }
@@ -91,9 +71,17 @@ async function fetchSnapshot(householdId: string) {
   return {
     household: householdResult.data as Household,
     patients: (patientsResult.data ?? []) as Patient[],
-    medicines: (medicinesResult.data ?? []) as Medicine[],
+    medicines: ((medicinesResult.data ?? []) as Medicine[]).map((medicine) => ({
+      ...medicine,
+      timing_slots: medicine.timing_slots ?? {},
+      specific_days: medicine.specific_days ?? [],
+      specific_times: medicine.specific_times ?? [],
+      duration_days: medicine.duration_days ?? null,
+      dosage_notes: medicine.dosage_notes ?? "",
+    })),
     purchases: (purchasesResult.data ?? []) as Purchase[],
-    reports,
+    reports: ((reportsResult.data ?? []) as Report[]).map((report) => ({ ...report, file_url: "" })),
+    dailyLogs: (logsResult.data ?? []) as DailyLog[],
   } satisfies Snapshot;
 }
 
@@ -171,6 +159,7 @@ export function useLedger() {
       return;
     }
 
+    const currentSession = session;
     let cancelled = false;
 
     async function sync() {
@@ -179,8 +168,8 @@ export function useLedger() {
         setError("");
 
         const household = await ensureHousehold(
-          session?.user.id ?? "",
-          session?.user.user_metadata.household_name || "My Family Ledger",
+          currentSession.user.id,
+          currentSession.user.user_metadata.household_name || "My Family Ledger",
         );
 
         await flushPending();
@@ -224,10 +213,7 @@ export function useLedger() {
     await saveSnapshot(nextSnapshot);
   }
 
-  async function upsertRecord(
-    table: TableName,
-    record: Record<string, unknown>,
-  ) {
+  async function upsertRecord(table: TableName, record: Record<string, unknown>) {
     const stampedRecord = stamp(record);
 
     if (!session?.user || !navigator.onLine) {
@@ -248,15 +234,20 @@ export function useLedger() {
     return stampedRecord;
   }
 
-  async function mutateSnapshot(
-    table: TableName,
-    record: Record<string, unknown>,
-  ) {
+  async function mutateSnapshot(table: TableName, record: Record<string, unknown>) {
     const next = (await upsertRecord(table, record)) as unknown as Record<string, unknown> & { id: string };
     const nextSnapshot = structuredClone(snapshot) as Snapshot;
 
     if (table === "households") {
       nextSnapshot.household = next as unknown as Household;
+    } else if (table === "daily_logs") {
+      const collection = nextSnapshot.dailyLogs as unknown as Array<Record<string, unknown> & { id: string }>;
+      const index = collection.findIndex((entry) => entry.id === next.id);
+      if (index >= 0) {
+        collection[index] = next;
+      } else {
+        collection.unshift(next);
+      }
     } else {
       const collection = nextSnapshot[table] as unknown as Array<Record<string, unknown> & { id: string }>;
       const index = collection.findIndex((entry) => entry.id === next.id);
@@ -305,7 +296,7 @@ export function useLedger() {
 
   async function addPatient(input: Omit<Patient, "id" | "created_at" | "updated_at" | "household_id" | "is_archived">) {
     if (!snapshot.household) {
-      throw new Error("Household setup is missing.");
+      fail("Household setup is missing.");
     }
 
     await mutateSnapshot("patients", {
@@ -316,11 +307,9 @@ export function useLedger() {
     });
   }
 
-  async function addMedicine(
-    input: Omit<Medicine, "id" | "created_at" | "updated_at" | "household_id" | "is_archived">,
-  ) {
+  async function addMedicine(input: Omit<Medicine, "id" | "created_at" | "updated_at" | "household_id" | "is_archived">) {
     if (!snapshot.household) {
-      throw new Error("Household setup is missing.");
+      fail("Household setup is missing.");
     }
 
     await mutateSnapshot("medicines", {
@@ -331,11 +320,9 @@ export function useLedger() {
     });
   }
 
-  async function addPurchase(
-    input: Omit<Purchase, "id" | "created_at" | "updated_at" | "household_id" | "is_archived">,
-  ) {
+  async function addPurchase(input: Omit<Purchase, "id" | "created_at" | "updated_at" | "household_id" | "is_archived">) {
     if (!snapshot.household) {
-      throw new Error("Household setup is missing.");
+      fail("Household setup is missing.");
     }
 
     await mutateSnapshot("purchases", {
@@ -355,7 +342,6 @@ export function useLedger() {
     }
 
     let filePath = input.file_path;
-    let fileUrl = "";
 
     if (file && !session?.user) {
       fail("Sign in again before uploading PDF or image reports.");
@@ -374,20 +360,30 @@ export function useLedger() {
       if (uploadError) {
         fail(`Report upload failed: ${uploadError.message}`);
       }
-      const { data: signed } = await supabase.storage.from("reports").createSignedUrl(filePath, 60 * 60 * 24 * 30);
-      if (!signed?.signedUrl) {
-        fail("Report uploaded but signed URL generation failed. Check storage select policy.");
-      }
-      fileUrl = signed?.signedUrl ?? "";
     }
 
     await mutateSnapshot("reports", {
       id: crypto.randomUUID(),
       household_id: snapshot.household.id,
       ...input,
-      file_url: fileUrl,
+      file_url: "",
       file_path: filePath,
       is_archived: false,
+    });
+  }
+
+  async function addDailyLog(
+    input: Omit<DailyLog, "id" | "created_at" | "updated_at" | "household_id" | "is_archived">,
+  ) {
+    if (!snapshot.household) {
+      fail("Household setup is missing.");
+    }
+
+    await mutateSnapshot("daily_logs", {
+      id: crypto.randomUUID(),
+      household_id: snapshot.household.id,
+      is_archived: false,
+      ...input,
     });
   }
 
@@ -430,18 +426,37 @@ export function useLedger() {
     });
   }
 
+  async function archiveDailyLog(log: DailyLog) {
+    await mutateSnapshot("daily_logs", {
+      ...log,
+      is_archived: true,
+    });
+  }
+
+  async function getReportUrl(report: Report) {
+    if (!report.file_path) {
+      return report.file_url || "";
+    }
+
+    const { data, error: signedError } = await supabase.storage.from("reports").createSignedUrl(report.file_path, 60 * 30);
+    if (signedError) {
+      fail(`Report open failed: ${signedError.message}`);
+    }
+    return data?.signedUrl ?? "";
+  }
+
   const derivedMedicines = useMemo(
     () => buildDerivedMedicines(snapshot.patients, snapshot.medicines, snapshot.purchases),
-    [snapshot],
+    [snapshot.patients, snapshot.medicines, snapshot.purchases],
   );
   const reminders = useMemo(() => buildReminders(derivedMedicines), [derivedMedicines]);
   const patientSummaries = useMemo(
-    () => buildPatientSummaries(snapshot.patients, derivedMedicines, snapshot.reports),
-    [snapshot.patients, snapshot.reports, derivedMedicines],
+    () => buildPatientSummaries(snapshot.patients, derivedMedicines, snapshot.reports, snapshot.dailyLogs),
+    [snapshot.patients, derivedMedicines, snapshot.reports, snapshot.dailyLogs],
   );
   const stats = useMemo(
     () => buildAppStats(snapshot.patients, derivedMedicines, snapshot.reports),
-    [snapshot.patients, snapshot.reports, derivedMedicines],
+    [snapshot.patients, derivedMedicines, snapshot.reports],
   );
 
   return {
@@ -461,10 +476,13 @@ export function useLedger() {
     addMedicine,
     addPurchase,
     addReport,
+    addDailyLog,
+    getReportUrl,
     toggleMedicineActive,
     archivePatient,
     archiveMedicine,
     archivePurchase,
     archiveReport,
+    archiveDailyLog,
   };
 }

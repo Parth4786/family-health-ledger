@@ -3,7 +3,7 @@ import type { Snapshot } from "../types";
 
 type PendingOperation = {
   id: string;
-  table: "patients" | "medicines" | "purchases" | "reports" | "households";
+  table: "patients" | "medicines" | "purchases" | "reports" | "daily_logs" | "households";
   payload: Record<string, unknown>;
 };
 
