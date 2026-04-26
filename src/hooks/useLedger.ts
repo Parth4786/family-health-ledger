@@ -104,6 +104,19 @@ export function useLedger() {
   const [error, setError] = useState("");
   const [isConfigured, setIsConfigured] = useState(false);
 
+  function getErrorMessage(errorValue: unknown, fallback: string) {
+    if (errorValue instanceof Error && errorValue.message) {
+      return errorValue.message;
+    }
+    if (typeof errorValue === "object" && errorValue !== null && "message" in errorValue) {
+      const message = (errorValue as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) {
+        return message;
+      }
+    }
+    return fallback;
+  }
+
   function fail(message: string): never {
     setError(message);
     throw new Error(message);
@@ -183,11 +196,7 @@ export function useLedger() {
         if (!cancelled) {
           setIsConfigured(false);
           setSyncStatus("error");
-          setError(
-            syncError instanceof Error
-              ? syncError.message
-              : "Supabase sync failed. Check SQL setup and bucket policies.",
-          );
+          setError(getErrorMessage(syncError, "Supabase sync failed. Check SQL setup and bucket policies."));
         }
       }
     }

@@ -102,25 +102,32 @@ alter table public.medicines enable row level security;
 alter table public.purchases enable row level security;
 alter table public.reports enable row level security;
 
+drop policy if exists "household owner can view own household" on public.households;
 create policy "household owner can view own household" on public.households
 for select using (owner_id = auth.uid());
+drop policy if exists "household owner can insert own household" on public.households;
 create policy "household owner can insert own household" on public.households
 for insert with check (owner_id = auth.uid());
+drop policy if exists "household owner can update own household" on public.households;
 create policy "household owner can update own household" on public.households
 for update using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
+drop policy if exists "patients scoped to own household" on public.patients;
 create policy "patients scoped to own household" on public.patients
 for all using (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()))
 with check (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()));
 
+drop policy if exists "medicines scoped to own household" on public.medicines;
 create policy "medicines scoped to own household" on public.medicines
 for all using (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()))
 with check (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()));
 
+drop policy if exists "purchases scoped to own household" on public.purchases;
 create policy "purchases scoped to own household" on public.purchases
 for all using (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()))
 with check (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()));
 
+drop policy if exists "reports scoped to own household" on public.reports;
 create policy "reports scoped to own household" on public.reports
 for all using (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()))
 with check (exists (select 1 from public.households h where h.id = household_id and h.owner_id = auth.uid()));
@@ -129,6 +136,7 @@ insert into storage.buckets (id, name, public)
 values ('reports', 'reports', false)
 on conflict (id) do nothing;
 
+drop policy if exists "authenticated users can upload own household reports" on storage.objects;
 create policy "authenticated users can upload own household reports" on storage.objects
 for insert to authenticated
 with check (
@@ -141,6 +149,7 @@ with check (
   )
 );
 
+drop policy if exists "authenticated users can read own household reports" on storage.objects;
 create policy "authenticated users can read own household reports" on storage.objects
 for select to authenticated
 using (
