@@ -2,10 +2,18 @@ import { todayIso } from "./date";
 import type { Snapshot } from "../types";
 
 const today = todayIso();
+const demoHouseholdId = crypto.randomUUID();
+const demoPatientGrandfatherId = crypto.randomUUID();
+const demoPatientGrandmotherId = crypto.randomUUID();
+const demoMedicineMetforminId = crypto.randomUUID();
+const demoMedicineAtorvastatinId = crypto.randomUUID();
+const demoPurchaseId = crypto.randomUUID();
+const demoReportId = crypto.randomUUID();
+const demoDailyLogId = crypto.randomUUID();
 
 export const demoSnapshot: Snapshot = {
   household: {
-    id: "demo-household",
+    id: demoHouseholdId,
     owner_id: "demo-user",
     name: "Family Health Ledger",
     created_at: new Date().toISOString(),
@@ -13,8 +21,8 @@ export const demoSnapshot: Snapshot = {
   },
   patients: [
     {
-      id: "p-grandfather",
-      household_id: "demo-household",
+      id: demoPatientGrandfatherId,
+      household_id: demoHouseholdId,
       name: "Grandfather",
       relationship: "Patient",
       birth_year: 1948,
@@ -27,8 +35,8 @@ export const demoSnapshot: Snapshot = {
       updated_at: new Date().toISOString(),
     },
     {
-      id: "p-grandmother",
-      household_id: "demo-household",
+      id: demoPatientGrandmotherId,
+      household_id: demoHouseholdId,
       name: "Grandmother",
       relationship: "Patient",
       birth_year: 1952,
@@ -43,9 +51,9 @@ export const demoSnapshot: Snapshot = {
   ],
   medicines: [
     {
-      id: "m-metformin",
-      household_id: "demo-household",
-      patient_id: "p-grandfather",
+      id: demoMedicineMetforminId,
+      household_id: demoHouseholdId,
+      patient_id: demoPatientGrandfatherId,
       name: "Metformin 500mg",
       purpose: "Diabetes control",
       dosage_per_day: 2,
@@ -70,9 +78,9 @@ export const demoSnapshot: Snapshot = {
       updated_at: new Date().toISOString(),
     },
     {
-      id: "m-atorvastatin",
-      household_id: "demo-household",
-      patient_id: "p-grandmother",
+      id: demoMedicineAtorvastatinId,
+      household_id: demoHouseholdId,
+      patient_id: demoPatientGrandmotherId,
       name: "Atorvastatin 10mg",
       purpose: "Cholesterol support",
       dosage_per_day: 1,
@@ -98,10 +106,10 @@ export const demoSnapshot: Snapshot = {
   ],
   purchases: [
     {
-      id: "buy-metformin",
-      household_id: "demo-household",
-      patient_id: "p-grandfather",
-      medicine_id: "m-metformin",
+      id: demoPurchaseId,
+      household_id: demoHouseholdId,
+      patient_id: demoPatientGrandfatherId,
+      medicine_id: demoMedicineMetforminId,
       label: "Metformin refill",
       purchased_on: today,
       strips_bought: 2,
@@ -116,9 +124,9 @@ export const demoSnapshot: Snapshot = {
   ],
   reports: [
     {
-      id: "r-demo",
-      household_id: "demo-household",
-      patient_id: "p-grandmother",
+      id: demoReportId,
+      household_id: demoHouseholdId,
+      patient_id: demoPatientGrandmotherId,
       title: "Quarterly lipid panel",
       report_type: "Lab report",
       report_date: today,
@@ -132,9 +140,9 @@ export const demoSnapshot: Snapshot = {
   ],
   dailyLogs: [
     {
-      id: "log-demo",
-      household_id: "demo-household",
-      patient_id: "p-grandfather",
+      id: demoDailyLogId,
+      household_id: demoHouseholdId,
+      patient_id: demoPatientGrandfatherId,
       logged_on: today,
       bp_systolic: 128,
       bp_diastolic: 82,

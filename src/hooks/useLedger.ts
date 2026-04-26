@@ -18,10 +18,18 @@ function stamp(payload: Record<string, unknown>) {
   };
 }
 
-function normalizeMedicine(medicine: Partial<Medicine>): Medicine {
+function isValidUuid(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89abAB][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function normalizeId(value: unknown): string {
+  return isValidUuid(value) ? value : crypto.randomUUID();
+}
+
+function normalizeMedicine(medicine: Partial<Medicine>, householdId: string): Medicine {
   return {
-    id: medicine.id ?? crypto.randomUUID(),
-    household_id: medicine.household_id ?? "",
+    id: normalizeId(medicine.id),
+    household_id: householdId || String(medicine.household_id ?? ""),
     patient_id: medicine.patient_id ?? "",
     name: medicine.name ?? "",
     purpose: medicine.purpose ?? "",
@@ -46,21 +54,74 @@ function normalizeMedicine(medicine: Partial<Medicine>): Medicine {
 }
 
 function normalizeSnapshot(snapshot: Partial<Snapshot> | undefined): Snapshot {
+  const normalizedHouseholdId = snapshot?.household ? normalizeId(snapshot.household.id) : "";
+
   return {
-    household: snapshot?.household ?? null,
-    patients: Array.isArray(snapshot?.patients) ? snapshot!.patients : [],
-    medicines: Array.isArray(snapshot?.medicines)
-      ? snapshot!.medicines.map((medicine) => normalizeMedicine(medicine))
+    household: snapshot?.household
+      ? {
+          ...snapshot.household,
+          id: normalizedHouseholdId,
+          owner_id: snapshot.household.owner_id ?? "",
+          name: snapshot.household.name ?? "Family Health Ledger",
+          created_at: snapshot.household.created_at ?? new Date().toISOString(),
+          updated_at: snapshot.household.updated_at ?? new Date().toISOString(),
+        }
+      : null,
+    patients: Array.isArray(snapshot?.patients)
+      ? snapshot!.patients.map((patient) => ({
+          ...patient,
+          household_id: normalizedHouseholdId || String(patient.household_id ?? ""),
+          birth_year: patient.birth_year ?? null,
+          conditions: patient.conditions ?? "",
+          notes: patient.notes ?? "",
+          color_accent: patient.color_accent ?? "",
+          is_active: patient.is_active ?? false,
+          is_archived: patient.is_archived ?? false,
+          created_at: patient.created_at ?? new Date().toISOString(),
+          updated_at: patient.updated_at ?? new Date().toISOString(),
+        }))
       : [],
-    purchases: Array.isArray(snapshot?.purchases) ? snapshot!.purchases : [],
+    medicines: Array.isArray(snapshot?.medicines)
+      ? snapshot!.medicines.map((medicine) => normalizeMedicine(medicine, normalizedHouseholdId))
+      : [],
+    purchases: Array.isArray(snapshot?.purchases)
+      ? snapshot!.purchases.map((purchase) => ({
+          ...purchase,
+          household_id: normalizedHouseholdId || String(purchase.household_id ?? ""),
+          pharmacy: purchase.pharmacy ?? "",
+          notes: purchase.notes ?? "",
+          created_at: purchase.created_at ?? new Date().toISOString(),
+          updated_at: purchase.updated_at ?? new Date().toISOString(),
+        }))
+      : [],
     reports: Array.isArray(snapshot?.reports)
       ? snapshot!.reports.map((report) => ({
           ...report,
+          household_id: normalizedHouseholdId || String(report.household_id ?? ""),
+          title: report.title ?? "",
+          report_type: report.report_type ?? "",
+          summary: report.summary ?? "",
           file_url: report.file_url ?? "",
           file_path: report.file_path ?? "",
+          created_at: report.created_at ?? new Date().toISOString(),
+          updated_at: report.updated_at ?? new Date().toISOString(),
         }))
       : [],
-    dailyLogs: Array.isArray(snapshot?.dailyLogs) ? snapshot!.dailyLogs : [],
+    dailyLogs: Array.isArray(snapshot?.dailyLogs)
+      ? snapshot!.dailyLogs.map((log) => ({
+          ...log,
+          household_id: normalizedHouseholdId || String(log.household_id ?? ""),
+          bp_systolic: log.bp_systolic ?? null,
+          bp_diastolic: log.bp_diastolic ?? null,
+          pulse: log.pulse ?? null,
+          sugar: log.sugar ?? null,
+          temperature: log.temperature ?? null,
+          weight: log.weight ?? null,
+          notes: log.notes ?? "",
+          created_at: log.created_at ?? new Date().toISOString(),
+          updated_at: log.updated_at ?? new Date().toISOString(),
+        }))
+      : [],
   };
 }
 
@@ -247,8 +308,23 @@ export function useLedger() {
   async function flushPending() {
     const pending = await listPendingOperations();
     for (const operation of pending) {
+      const invalidUuidField = ["id", "household_id", "patient_id", "medicine_id"].find((field) => {
+        const value = operation.payload[field];
+        return typeof value === "string" && !isValidUuid(value);
+      });
+
+      if (invalidUuidField) {
+        await clearPendingOperation(operation.id);
+        continue;
+      }
+
       const { error: operationError } = await supabase.from(operation.table).upsert(operation.payload);
       if (operationError) {
+        const message = getErrorMessage(operationError, "");
+        if (/invalid input syntax for type uuid/i.test(message)) {
+          await clearPendingOperation(operation.id);
+          continue;
+        }
         throw operationError;
       }
       await clearPendingOperation(operation.id);
