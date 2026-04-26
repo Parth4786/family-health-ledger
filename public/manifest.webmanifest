@@ -1,0 +1,17 @@
+{
+  "name": "Family Health Ledger",
+  "short_name": "FHL",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "description": "Track medicines, reports, refill dates, and costs for family care.",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
