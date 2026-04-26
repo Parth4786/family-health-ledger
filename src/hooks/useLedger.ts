@@ -104,6 +104,11 @@ export function useLedger() {
   const [error, setError] = useState("");
   const [isConfigured, setIsConfigured] = useState(false);
 
+  function fail(message: string): never {
+    setError(message);
+    throw new Error(message);
+  }
+
   useEffect(() => {
     let mounted = true;
 
@@ -337,11 +342,19 @@ export function useLedger() {
     file?: File | null,
   ) {
     if (!snapshot.household) {
-      throw new Error("Household setup is missing.");
+      fail("Household setup is missing.");
     }
 
     let filePath = input.file_path;
     let fileUrl = "";
+
+    if (file && !session?.user) {
+      fail("Sign in again before uploading PDF or image reports.");
+    }
+
+    if (file && !navigator.onLine) {
+      fail("File uploads require internet access. Reconnect and try again.");
+    }
 
     if (file && session?.user) {
       const safeName = `${Date.now()}-${file.name.replace(/\s+/g, "-").toLowerCase()}`;
@@ -350,9 +363,12 @@ export function useLedger() {
         upsert: true,
       });
       if (uploadError) {
-        throw uploadError;
+        fail(`Report upload failed: ${uploadError.message}`);
       }
       const { data: signed } = await supabase.storage.from("reports").createSignedUrl(filePath, 60 * 60 * 24 * 30);
+      if (!signed?.signedUrl) {
+        fail("Report uploaded but signed URL generation failed. Check storage select policy.");
+      }
       fileUrl = signed?.signedUrl ?? "";
     }
 

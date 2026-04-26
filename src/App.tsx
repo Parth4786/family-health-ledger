@@ -260,6 +260,8 @@ export default function App() {
         </aside>
 
         <section className="content">
+          {ledger.error && <div className="inline-alert">{ledger.error}</div>}
+
           {activeTab === "dashboard" && <DashboardView ledger={ledger} onOpenTab={setActiveTab} />}
 
           {activeTab === "patients" && (
